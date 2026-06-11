@@ -9,9 +9,9 @@ Standardized tools and runbooks for enterprise Windows endpoint support. Built f
 - Covers: Windows Update, Print Spooler, Time Service, Network Identity, Defender, Profile Health, Disk Pressure
 
 **Golden Image Toolkit**
-- Profile mirror script that clones a reference admin profile into `C:\Users\Default`
-- Taskbar layout generation, wallpaper staging, and local security policy application
-- Full build-to-deploy imaging runbook
+- Configures the Windows Default user profile so new profiles inherit a standard look
+- Wallpaper, lock screen, profile picture, taskbar pins, desktop shortcuts, and taskbar/Start preferences
+- Step-by-step runbook included as both markdown and a formatted PDF
 
 **ManageEngine Endpoint Central SOP**
 - 15-section operational manual for Endpoint Central Cloud (Security Edition)
@@ -30,8 +30,9 @@ Standardized tools and runbooks for enterprise Windows endpoint support. Built f
 │   ├── Invoke-HelpDeskRollback.ps1
 │   └── RUNBOOK.md
 ├── golden-image/
-│   ├── Invoke-GoldenImageProfileMirror.ps1
-│   └── RUNBOOK.md
+│   ├── Set-GoldenImageProfile.ps1
+│   ├── RUNBOOK.md
+│   └── Golden-Image-Runbook.pdf
 ├── mec-sop/
 │   └── Endpoint-Central-SOP.md
 └── runbooks/
