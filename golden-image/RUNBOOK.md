@@ -1,151 +1,183 @@
-# Golden Image Build Runbook
-## Mirror a Local Admin Profile to All New Users
+# Golden Image - BuildAdmin Automation - Runbook
 
-**OS:** Windows 11 Pro  
-**Method:** Profile mirror (unsupported but functional) with optional CopyProfile alternative  
-**Version:** 2.0
+**Script:** `Set-GoldenImageProfile.ps1` (v14.0)
+**Platform:** Windows 11 Pro (24H2 / 25H2)
 
----
-
-## What This Produces
-
-A Windows 11 golden image where every new user profile on every deployed machine inherits:
-
-- Custom wallpaper and lock screen
-- Desktop shortcuts in a defined arrangement
-- Taskbar pins in a defined order
-- Login security policies (Ctrl+Alt+Del, legal notice, hide last user)
-- Shell preferences from the reference admin profile
+> A formatted PDF version of this runbook is in this folder: `Golden-Image-Runbook.pdf`.
 
 ---
 
-## Prerequisites
+## What this is
 
-| Requirement | Detail |
-|---|---|
-| Build machine | Clean Windows 11 Pro install, not domain-joined during build |
-| Local admin | Create a dedicated imaging account (e.g., "ImageAdmin") |
-| Software | All apps that need taskbar pins must be installed before profile configuration |
-| PowerShell | 5.1+ |
+This script automates the proven manual image-prep process. You still set up the
+reference account by hand; the script automates the repetitive BuildAdmin work
+(permissions, profile copy, owner reset) plus two settings that are easy to
+forget (BitLocker, auto sign-in), and it verifies the result.
+
+It is run ONCE, as Administrator, from a SECONDARY local admin account
+("BuildAdmin") while the reference account ("TemplateUser") is fully signed out.
 
 ---
 
-## Phase 1: Build the Reference Machine
+## Account roles
 
-### Step 1: Clean Install
-Install Windows 11 Pro. Create a local account during OOBE (do not use a Microsoft account).
+- **TemplateUser** - the first local admin, created at OOBE. You configure this
+  one to look exactly how every imaged profile should look.
+- **BuildAdmin** - a second local admin, left unconfigured. You only use it to
+  run this script. Keep it clean.
+- **TestUser** - a brand-new account used only to verify the result after imaging.
 
-### Step 2: Install Applications
-Install all applications. After installation, verify shortcuts exist in `C:\ProgramData\Microsoft\Windows\Start Menu\Programs`:
+Never run the script from TemplateUser, and never test with TemplateUser or
+BuildAdmin (they already have profiles; Default-profile changes only affect
+profiles created afterward).
+
+---
+
+## What YOU do manually (before running the script)
+
+### A. Out-of-Box Experience - create a LOCAL account (no Microsoft account)
+
+1. Power on the blank laptop and proceed through the Out-of-Box Experience (OOBE)
+   to the first setup screens.
+2. Open a command prompt at OOBE (Shift+F10, or open CMD) and run:
+
+   ```
+   oobe\bypassnro
+   ```
+
+   The machine reboots back into OOBE.
+3. Continue, and at the network step choose **"I don't have internet"**, then
+   **"Continue with limited setup"**.
+   - If the "I don't have internet" option does not appear, physically
+     disconnect the machine from the internet (unplug Ethernet / turn off Wi-Fi)
+     to force the option to show.
+4. Create the first **local administrator** account: **TemplateUser**.
+5. Do not let Windows Updates apply during setup.
+
+### B. Configure TemplateUser exactly how every imaged profile should look
+
+6. Log in as TemplateUser and set everything up:
+   - Install and configure all applications.
+   - Desktop icons and shortcuts.
+   - Taskbar pins.
+   - Any per-user appearance settings (colors, etc.).
+
+7. Set the **local Group Policy** items (these are machine-level and survive
+   imaging). Open `gpedit.msc`:
+   - **Wallpaper** - User Configuration > Administrative Templates > Desktop >
+     Desktop > **Desktop Wallpaper** > Enabled. Set the wallpaper path (a path
+     that will exist on imaged machines) and the style. This GP method is the
+     reliable one.
+   - **Logon disclaimer title** and **disclaimer message** - Computer
+     Configuration > Windows Settings > Security Settings > Local Policies >
+     Security Options > "Interactive logon: Message title for users attempting to
+     log on" and "Interactive logon: Message text for users attempting to log on".
+   - **Require Ctrl+Alt+Del at logon** - same Security Options node >
+     "Interactive logon: Do not require CTRL+ALT+DEL" > **Disabled**.
+   - **Hide last signed-in user** - same Security Options node > "Interactive
+     logon: Don't display last signed-in" > **Enabled**.
+   - Any other individual local Group Policy settings you want in the image.
+
+> Lock screen image and profile picture are intentionally NOT part of this
+> process - they were unreliable and are not used.
+
+### C. Create the build account and hand off to the script
+
+8. Create a SECOND local administrator (**BuildAdmin**). Do **not** configure it.
+9. Put `Set-GoldenImageProfile.ps1` in `C:\Scripts`.
+10. **Sign out** of TemplateUser completely (Start > user icon > Sign out - not
+    lock, not switch user).
+11. Log in as **BuildAdmin** and run the script (next section).
+
+> If your first admin is not named exactly `TemplateUser`, open the script and
+> change the `$RefUser` line near the top to match the account name.
+
+---
+
+## How to run it
+
+From BuildAdmin, open **PowerShell as Administrator**:
 
 ```powershell
-Get-ChildItem "C:\ProgramData\Microsoft\Windows\Start Menu\Programs" -Filter "*.lnk" | Select-Object Name
+Set-ExecutionPolicy Bypass -Scope Process
 ```
-
-Per-user apps (Slack, Teams, Webex) often install to `AppData\Local` and don't create All Users shortcuts. The taskbar layout XML needs shortcuts in the All Users path. Create them manually if missing:
 
 ```powershell
-$shell = New-Object -ComObject WScript.Shell
-
-# Adjust target paths to match actual install locations
-$apps = @{
-    "Slack" = "C:\Users\ImageAdmin\AppData\Local\slack\slack.exe"
-    "Webex" = "C:\Users\ImageAdmin\AppData\Local\CiscoSpark\CiscoCollabHost.exe"
-}
-
-foreach ($name in $apps.Keys) {
-    $shortcut = $shell.CreateShortcut("C:\ProgramData\Microsoft\Windows\Start Menu\Programs\$name.lnk")
-    $shortcut.TargetPath = $apps[$name]
-    $shortcut.Save()
-}
+cd C:\Scripts
 ```
 
-### Step 3: Configure the Profile
-Log in as the imaging admin and set up the baseline: wallpaper, lock screen, taskbar pins (in order), desktop icons, File Explorer preferences, profile picture.
-
-### Step 4: Apply Local Security Policies
 ```powershell
-$regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-Set-ItemProperty $regPath -Name "DisableCAD" -Value 0 -Type DWord         # Require Ctrl+Alt+Del
-Set-ItemProperty $regPath -Name "DontDisplayLastUserName" -Value 1 -Type DWord  # Hide last user
-Set-ItemProperty $regPath -Name "LegalNoticeCaption" -Value "Notice" -Type String
-Set-ItemProperty $regPath -Name "LegalNoticeText" -Value "Authorized use only." -Type String
+.\Set-GoldenImageProfile.ps1
 ```
 
-Or let the mirror script handle this with `-ApplyPolicies`.
+Watch for **`=== COMPLETE - all steps finished ===`** and read the verification
+lines above it. If you see **`=== ENDED EARLY ===`**, the red message says why.
+The script can never hang - every external command is timeout-protected.
 
 ---
 
-## Phase 2: Mirror the Profile
+## What the script does (7 steps)
 
-### Step 5: Log Off the Imaging Admin
-NTUSER.DAT is locked while the user is logged in. Log off, then log in as a different local admin.
+| Step | What happens |
+|------|--------------|
+| 1. Pre-flight | Confirms it is NOT running as TemplateUser, that TemplateUser exists and is signed out, and that Default exists. Warns if TemplateUser still has a session (locked files would be skipped). |
+| 2. BitLocker | Turns BitLocker off on C: (decrypts). Required for the image to deploy. Decryption finishes in the background. |
+| 3. Auto sign-in | Disables AutoAdminLogon, the automatic restart sign-on policy, and Fast Startup, so imaged machines always show a clean logon screen. |
+| 4. Ownership | Takes ownership of `C:\Users\Default` for Administrators, grants Full Control, replaces child entries, enables inheritance. |
+| 5. Copy | Copies the ENTIRE TemplateUser profile into Default - everything, including NTUSER.DAT - replacing what it can and skipping anything locked (no retries, no hang). |
+| 6. Reset owner | Resets the Default profile owner back to SYSTEM (required so Windows clones it cleanly for new users). |
+| 7. Verify | Confirms NTUSER.DAT landed, desktop shortcuts copied, file counts, SYSTEM owns Default, auto sign-in and Fast Startup are off, and BitLocker status. Prints PASS/WARN. |
 
-### Step 6: Run the Mirror Script
-
-```powershell
-.\Invoke-GoldenImageProfileMirror.ps1 `
-    -SourceProfile "C:\Users\ImageAdmin" `
-    -ApplyPolicies `
-    -WallpaperSource "C:\Installers\wallpaper.jpg" `
-    -Force
-```
-
-### Step 7: Validate
-1. Create a test user: `net user TestUser P@ssw0rd /add`
-2. Log in as TestUser.
-3. Check: wallpaper, taskbar pins, desktop shortcuts, Ctrl+Alt+Del requirement, legal notice, hidden last user.
-4. Delete the test account: `net user TestUser /delete`
-
-### Rollback
-```powershell
-Remove-Item "C:\Users\Default" -Recurse -Force
-Rename-Item "C:\Users\Default.backup_{timestamp}" "Default"
-```
+The script does NOT set wallpaper, the disclaimer, Ctrl+Alt+Del, or hide-user.
+You set those in Group Policy on TemplateUser; the profile copy and local Group
+Policy carry them to new profiles. Keeping the script out of those settings is
+deliberate - it avoids disturbing policy that is already working.
 
 ---
 
-## Phase 3: Capture and Deploy
+## After it completes
 
-### Step 8: Sysprep
-```cmd
-C:\Windows\System32\Sysprep\sysprep.exe /oobe /generalize /shutdown
-```
-The Default profile mirror survives sysprep because Default is a system template.
-
-### Step 9: Capture
-Capture the image using your deployment tool (ManageEngine, SCCM, MDT, etc.).
-
-### Step 10: Deploy
-Deploy to target machines. Ensure the deployment tool generates new SIDs for each machine to avoid SID duplication.
+1. Let BitLocker finish decrypting: `manage-bde -status C:` (wait for Fully Decrypted).
+2. **Reboot.**
+3. Optional spot-check: create a brand-new local user and log in to confirm the
+   look before imaging.
+4. Capture the image with **ManageEngine Endpoint Central** and deploy with
+   **OS Deployer**.
 
 ---
 
-## Switch Reference
+## Verification, explained
 
-| Switch | What it does |
-|--------|-------------|
-| -SourceProfile | Path to the admin profile to clone (required) |
-| -ApplyPolicies | Sets Ctrl+Alt+Del, hides last user, adds legal notice |
-| -LegalNoticeCaption | Custom login notice caption |
-| -LegalNoticeText | Custom login notice body text |
-| -WallpaperSource | Path to wallpaper image to stage system-wide |
-| -LockScreenSource | Path to lock screen image |
-| -SkipTaskbarLayout | Skip taskbar XML deployment |
-| -TaskbarLayoutXml | Path to custom LayoutModification.xml |
-| -SkipNtuser | Skip NTUSER.DAT copy (files only, no registry) |
-| -Force | Skip confirmation prompt |
+The step-7 report is your proof the run worked:
+
+- **NTUSER.DAT present in Default** - the reference registry hive copied (this is
+  what carries colors, Explorer, and per-user settings to new profiles).
+- **Desktop shortcuts copied (src/dst counts)** - the visible desktop matches.
+- **Default file count vs source** - bulk copy landed.
+- **Default owned by SYSTEM** - permissions correctly reset for cloning.
+- **AutoAdminLogon disabled / Fast startup disabled** - clean logon screen.
+- **BitLocker off/decrypting** - ready to image.
 
 ---
 
-## Troubleshooting
+## If something is wrong
 
-**Taskbar pins not appearing:** Verify shortcuts exist in `C:\ProgramData\Microsoft\Windows\Start Menu\Programs`. Check that LayoutModification.xml paths match.
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| "running as TemplateUser" abort | You launched it from the wrong account | Sign out of TemplateUser, log in as BuildAdmin, re-run. |
+| "Reference profile not found" | First admin is not named `TemplateUser` | Set `$RefUser` at the top of the script to the real account name. |
+| WARN: TemplateUser still has a session | It was locked, not signed out | Fully sign out TemplateUser (Start - user icon - Sign out), re-run. |
+| Many files skipped | TemplateUser session still active, files locked | Sign it out and re-run; locked files copy when the profile is idle. |
+| Login still shows last user after imaging | The hide-user local GP was not set on TemplateUser | Set it in gpedit on TemplateUser before imaging (this is a manual step, not the script's job). |
 
-**NTUSER.DAT copy fails:** Source profile must be logged off. Log off the imaging admin before running the script.
+---
 
-**New profile gets empty desktop:** ACL issue. Run `icacls C:\Users\Default /reset /t /c`.
+## Why this approach
 
-**Works on build machine, not on deployed machines:** Verify new SIDs are being generated during deployment.
-
-**Future Windows updates break it:** This is an unsupported method. Test on one machine after every feature update. If it breaks, fall back to CopyProfile + provisioning packages.
+Earlier versions tried to have the script set wallpaper, the disclaimer, and the
+logon policies itself, through several mechanisms. On 24H2/25H2 those either were
+not enforced or disturbed working policy. The reliable approach, proven on the
+bench, is: set those by hand in Group Policy on TemplateUser (where they are
+enforced and survive imaging), and let the script automate the mechanical work -
+permissions, the full profile copy, the owner reset - plus BitLocker and auto
+sign-in, with verification. That division is what makes it work consistently.
