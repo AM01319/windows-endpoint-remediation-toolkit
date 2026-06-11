@@ -3,17 +3,30 @@
 ## v3.0 — June 2026
 
 ### Golden Image Toolkit (method change)
-- Replaced the profile-mirror script with Set-GoldenImageProfile.ps1, which uses the
-  capture-and-deploy method. It captures the real Windows 11 LayoutModification.json
-  from the configured admin taskbar and deploys that exact file, instead of generating
-  XML pin definitions. This is the reliable way to carry taskbar pins on Windows 11
-  22H2 and newer, where the old XML pin format is ignored.
-- Deploys taskbar layout to both the provisioning folder and the Default profile.
-- Added local security policies: require Ctrl+Alt+Del, hide last user, legal notice.
-- Added machine lock screen policy and browser startup policy.
-- Loads/writes/unloads the Default user hive with stale-hive handling.
-- Removed the robocopy profile-mirror approach (hit junction-point loops on
-  AppData\Local\Application Data and did not reliably carry pins).
+- Replaced all earlier approaches with Set-GoldenImageProfile.ps1 v14.0, which
+  automates the proven manual "BuildAdmin" image-prep workflow instead of trying
+  to set per-user visuals itself.
+- The script is run from a clean SECONDARY local admin (BuildAdmin) while the
+  configured reference account (TemplateUser) is fully signed out.
+- What the script does: pre-flight checks, disable BitLocker, disable auto
+  sign-in / restart sign-on / fast startup, take ownership of C:\Users\Default
+  for Administrators, copy the ENTIRE TemplateUser profile into Default
+  (including NTUSER.DAT, skipping anything locked), reset the Default owner back
+  to SYSTEM, and verify the copy and permissions.
+- Wallpaper, the logon disclaimer, require-Ctrl+Alt+Del, and hide-last-user are
+  set BY HAND in local Group Policy on TemplateUser. The script deliberately does
+  not touch them, because on 24H2/25H2 those are enforced by Group Policy / the
+  Security engine and survive imaging when set there, but were unreliable when the
+  script wrote them directly.
+- Lock screen image and profile picture were dropped (unreliable, not needed).
+- Why the change: on Windows 11 24H2/25H2, Microsoft deprecated personalization
+  roaming and changed how per-user settings clone from the Default profile, so the
+  older hive-edit / LayoutModification.json / Active Setup approaches did not
+  reliably carry. The current split — manual Group Policy for enforced settings,
+  scripted automation for the mechanical profile copy and permissions — is what
+  works consistently on the bench.
+- Cannot-hang design: every external command runs under a timeout and the run
+  always ends with a clear COMPLETE or ENDED EARLY banner plus a verification report.
 
 ## v2.0 — April 2026
 

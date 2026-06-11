@@ -9,8 +9,9 @@ Standardized tools and runbooks for enterprise Windows endpoint support. Built f
 - Covers: Windows Update, Print Spooler, Time Service, Network Identity, Defender, Profile Health, Disk Pressure
 
 **Golden Image Toolkit**
-- Configures the Windows Default user profile so new profiles inherit a standard look
-- Wallpaper, lock screen, profile picture, taskbar pins, desktop shortcuts, and taskbar/Start preferences
+- Automates the build-account image-prep workflow: run it from a clean secondary admin while the reference account is signed out
+- Disables BitLocker and auto sign-in, takes ownership of the Default profile, copies the entire reference profile into Default (including NTUSER.DAT), resets ownership to SYSTEM, and verifies the result
+- Wallpaper and logon Group Policy are set by hand on the reference account; the script handles the mechanical work and verification
 - Step-by-step runbook included as both markdown and a formatted PDF
 
 **ManageEngine Endpoint Central SOP**
