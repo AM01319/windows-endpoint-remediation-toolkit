@@ -97,15 +97,19 @@ overwrite it if present, so the same command works either way.
 
 Profile creation fails silently when the drive is full.
 
+Check free space:
+
+PowerShell:
 ```powershell
-# Check free space
 (Get-PSDrive C).Free / 1GB
 ```
 CMD:
 ```cmd
 dir C:\ | find "bytes free"
+```
 
-# If under 2 GB, free space first
+If under 2 GB, free space first (PowerShell - runs the orchestrator):
+```powershell
 .\Invoke-HelpDeskOrchestrator.ps1 -RelieveDiskPressure -CleanupTemp -DisableHibernation
 ```
 Then proceed with FIX A.
@@ -114,17 +118,25 @@ Then proceed with FIX A.
 
 ## Bulk Cleanup
 
+List TEMP profile folders:
+
+PowerShell:
 ```powershell
-# List TEMP profile folders
 Get-ChildItem C:\Users -Directory | Where-Object { $_.Name -match "^TEMP\." }
 ```
-CMD (list TEMP profile folders):
+CMD:
 ```cmd
 dir /ad "C:\Users\TEMP*"
+```
 
-# Remove them (ensure users are logged off)
+Remove them (ensure users are logged off first) - PowerShell:
+```powershell
 Get-ChildItem C:\Users -Directory | Where-Object { $_.Name -match "^TEMP\." } |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+```
+CMD:
+```cmd
+for /d %F in ("C:\Users\TEMP*") do rmdir /s /q "%F"
 ```
 
 ---
